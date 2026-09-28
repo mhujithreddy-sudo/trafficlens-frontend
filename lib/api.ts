@@ -11,10 +11,10 @@ export const api = {
   healthUrl: `${API_BASE_URL}/api/health`,
   ping: (payload: unknown, signal?: AbortSignal) => request('/api/ping', { method: 'POST', body: JSON.stringify(payload), signal }),
   traceroute: (payload: unknown, signal?: AbortSignal) => request('/api/traceroute', { method: 'POST', body: JSON.stringify(payload), signal }),
-  analyze: (payload: unknown) => request('/analyze', { method: 'POST', body: JSON.stringify(payload) }),
-  compare: (payload: unknown) => request('/compare', { method: 'POST', body: JSON.stringify(payload) }),
-  history: () => request('/history'),
-  health: () => request('/health'),
+  analyze: (payload: unknown) => request('/api/analyze', { method: 'POST', body: JSON.stringify(payload) }),
+  compare: (payload: unknown) => request('/api/compare', { method: 'POST', body: JSON.stringify(payload) }),
+  history: () => request('/api/history'),
+  health: () => request('/api/health'),
 }
 
 export default api
