@@ -1,16 +1,16 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || process.env.VITE_API_BASE_URL || 'http://127.0.0.1:5000/api'
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '')
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, { headers: { 'Content-Type': 'application/json', ...options.headers }, ...options })
-  if (!response.ok) throw new Error(`API request failed: ${response.status}`)
+  if (!response.ok) { let message = `API request failed (${response.status})`; try { const detail = await response.json(); message = detail.error || detail.message || detail.detail || message } catch {} throw new Error(message) }
   return response.json() as Promise<T>
 }
 
 export const api = {
   baseUrl: API_BASE_URL,
-  healthUrl: `${API_BASE_URL}/health`,
-  ping: (payload: unknown) => request('/ping', { method: 'POST', body: JSON.stringify(payload) }),
-  traceroute: (payload: unknown) => request('/traceroute', { method: 'POST', body: JSON.stringify(payload) }),
+  healthUrl: `${API_BASE_URL}/api/health`,
+  ping: (payload: unknown, signal?: AbortSignal) => request('/api/ping', { method: 'POST', body: JSON.stringify(payload), signal }),
+  traceroute: (payload: unknown, signal?: AbortSignal) => request('/api/traceroute', { method: 'POST', body: JSON.stringify(payload), signal }),
   analyze: (payload: unknown) => request('/analyze', { method: 'POST', body: JSON.stringify(payload) }),
   compare: (payload: unknown) => request('/compare', { method: 'POST', body: JSON.stringify(payload) }),
   history: () => request('/history'),
