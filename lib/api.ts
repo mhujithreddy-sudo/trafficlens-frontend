@@ -1,7 +1,12 @@
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '')
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'https://netpulse-backend-i5co.onrender.com').replace(/\/$/, '')
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, { headers: { 'Content-Type': 'application/json', ...options.headers }, ...options })
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, { headers: { 'Content-Type': 'application/json', ...options.headers }, ...options })
+  } catch {
+    throw new Error('Cannot connect to the Python backend. Check the API URL, server status, and CORS configuration.')
+  }
   if (!response.ok) { let message = `API request failed (${response.status})`; try { const detail = await response.json(); message = detail.error || detail.message || detail.detail || message } catch {} throw new Error(message) }
   return response.json() as Promise<T>
 }
