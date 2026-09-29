@@ -1,6 +1,10 @@
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '')
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').trim().replace(/\/$/, '')
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  if (!API_BASE_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL is not configured. Set it to the deployed Flask backend URL.')
+  }
+
   let response: Response
   try {
     response = await fetch(`${API_BASE_URL}${path}`, { headers: { 'Content-Type': 'application/json', ...options.headers }, ...options })
