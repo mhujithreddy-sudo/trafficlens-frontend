@@ -18,7 +18,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 export const api = {
   baseUrl: API_BASE_URL,
   healthUrl: `${API_BASE_URL}/api/health`,
-  ping: (target: string, signal?: AbortSignal) => request('/api/ping', { method: 'POST', body: JSON.stringify({ target }), signal }),
+  ping: (target: string, count?: number | string, signal?: AbortSignal) => request('/api/ping', { method: 'POST', body: JSON.stringify({ target, count: Number(count) || 4 }), signal }),
   traceroute: (target: string, signal?: AbortSignal) => request('/api/traceroute', { method: 'POST', body: JSON.stringify({ target }), signal }),
   analyze: (payload: unknown) => request('/api/analyze', { method: 'POST', body: JSON.stringify(payload) }),
   compare: (payload: unknown) => request('/api/compare', { method: 'POST', body: JSON.stringify(payload) }),
