@@ -41,8 +41,16 @@ function MiniChart({ color = '#48c5ff' }: { color?: string }) {
   )
 }
 
-function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <section className={`card ${className}`}>{children}</section>
+function Card({
+  children,
+  className = '',
+  style,
+}: {
+  children: React.ReactNode
+  className?: string
+  style?: React.CSSProperties
+}) {
+  return <section className={`card ${className}`} style={style}>{children}</section>
 }
 
 function SectionTitle({ eyebrow, title, action }: { eyebrow?: string; title: string; action?: React.ReactNode }) {
@@ -190,7 +198,7 @@ function Sidebar({
             <p>
               {backendOnline
                 ? 'psutil real-time metrics streaming.'
-                : 'Ensure Flask server runs at http://127.0.0.1:5000.'}
+                : 'Ensure TrafficLens backend is running and reachable.'}
             </p>
             <span className="backend-endpoint" style={{ fontSize: '10px', color: '#62819d', wordBreak: 'break-all' }}>
               {api.baseUrl ? `${api.baseUrl}/api/health` : 'NEXT_PUBLIC_API_URL not set'}
@@ -277,7 +285,7 @@ function OverviewPage({
         </div>
         <div className="heading-actions">
           <Badge tone={backendOnline ? 'green' : 'red'}>
-            {backendOnline ? 'Backend Online (Port 5000)' : 'Backend Disconnected'}
+            {backendOnline ? 'Backend Online' : 'Backend Disconnected'}
           </Badge>
         </div>
       </div>
@@ -968,7 +976,7 @@ function AboutPage() {
           <div>
             <div className="concept-icon"><Activity /></div>
             <h3>Bandwidth Rate</h3>
-            <p>Calculated as \( \Delta \text{Bytes} / \Delta t \) between periodic ticks of OS network I/O counters.</p>
+            <p>Calculated as ΔBytes / Δt between periodic ticks of OS network I/O counters.</p>
           </div>
           <div>
             <div className="concept-icon"><Layers3 /></div>
@@ -1003,7 +1011,7 @@ function AboutPage() {
           <div className="arch-box api">
             <Server />
             <strong>Flask Backend</strong>
-            <span>Port 5000</span>
+            <span>Python 3.13 + Flask</span>
           </div>
           <div className="arch-arrow">
             <ArrowUpRight />
