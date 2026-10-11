@@ -3,9 +3,9 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'NetPulse — Network Diagnostic Dashboard',
-  description: 'Ping and traceroute analysis for the Computer Networks PBL project.',
-  generator: 'v0.app',
+  title: 'TrafficLens — Network Traffic Monitor',
+  description: 'Real-time bandwidth monitoring, socket telemetry, and traffic analysis for the Computer Networks PBL project.',
+  generator: 'TrafficLens',
   icons: {
     icon: [
       {
