@@ -1,33 +1,50 @@
-# TrafficLens – Network Traffic Monitor
+# 🌐 TrafficLens Frontend — Next.js Telemetry Dashboard
 
-This is a [Next.js](https://nextjs.org) project bootstrapped with [v0](https://v0.app).
+> **Computer Networks Project-Based Learning (PBL)**  
+> **Production Deployment:** [https://trafficlens-frontend.vercel.app](https://trafficlens-frontend.vercel.app)
 
-## Built with v0
+---
 
-This repository is linked to a [v0](https://v0.app) project. You can continue developing by visiting the link below -- start new chats to make changes, and v0 will push commits directly to this repo. Every merge to `main` will automatically deploy.
+## 📖 Overview
 
-[Continue working on v0 →](https://v0.app/chat/projects/prj_GL8t9hDwrLyynnTOa4kfXANIjuW6)
+TrafficLens Frontend is a modern, responsive network monitoring interface built with **Next.js 16 (App Router)**, **React 19**, **Tailwind CSS**, and **Recharts**. It visualizes real-time network measurements streamed from the local **FastAPI** backend via a secure HTTPS Cloudflare Tunnel.
 
-## Getting Started
+### Key Views:
+1. **Overview Dashboard:** Live bandwidth graphs, download/upload meters, active sockets, and top network consumers.
+2. **Devices & Interfaces:** Hardware adapters (NICs) and ARP-discovered local subnet neighbors with click-to-inspect detail modals.
+3. **Services & Protocols:** Active TCP/UDP connections mapped to host processes with bandwidth share percentages.
+4. **Traffic Details:** Packet capture logs, protocol breakdown (TCP, UDP, ICMP), and endpoint communication flows.
+5. **Traffic History:** Persistent time-series bandwidth logs, packet flows, and device discovery logs with pagination.
+6. **Settings:** Configurable sampling intervals and bandwidth spike alert thresholds with live PUT API mutations.
+7. **About Project:** PBL documentation and educational networking concepts.
 
-First, run the development server:
+---
 
+## 🚀 Getting Started
+
+### Local Development
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+# Install dependencies
+pnpm install
+
+# Run local development server
 pnpm dev
 ```
+Open [http://localhost:3000](http://localhost:3000) to view the application.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Connecting to Backend
+The frontend connects to the backend via `NEXT_PUBLIC_API_URL`:
+- **Local Dev:** `NEXT_PUBLIC_API_URL=http://localhost:8000` (in `.env.local`)
+- **Production:** `NEXT_PUBLIC_API_URL=https://<your-subdomain>.trycloudflare.com` (configured in Vercel)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-## Learn More
+## 🧪 Verification Commands
 
-To learn more, take a look at the following resources:
+```bash
+# Type check with TypeScript compiler
+pnpm exec tsc --noEmit
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-- [v0 Documentation](https://v0.app/docs) - learn about v0 and how to use it.
+# Production build with Turbopack
+pnpm run build
+```
