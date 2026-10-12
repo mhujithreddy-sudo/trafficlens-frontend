@@ -7,15 +7,18 @@ import {
   Cpu, Database, ExternalLink, Globe2, History, Info, Layers3, LayoutDashboard,
   Loader2, Menu, Network, Pause, Play, Plus, Radio, RefreshCw, Route, Search,
   Server, Settings2, ShieldCheck, Signal, SlidersHorizontal, Sparkles, StopCircle,
-  Timer, Trash2, TrendingUp, Wifi, XCircle, Zap
+  Timer, Trash2, TrendingUp, Wifi, XCircle, Zap, X
 } from 'lucide-react'
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis
 } from 'recharts'
 import {
-  api, NetworkResponse, DevicesResponse, ServicesResponse,
-  HistoryResponse, DeviceItem, ServiceItem, HistoryRecord
+  api, NetworkResponse, BandwidthResponse, DevicesResponse, ServicesResponse,
+  HistoryResponse, DeviceItem, DeviceDetailResponse, ServiceItem, HistoryRecord,
+  TrafficRecordItem, TrafficResponse, TrafficSummaryResponse, AnalyticsOverviewResponse,
+  TimelineResponse, TimelinePoint, TopDeviceItem, TopServiceItem, AlertItem,
+  AlertsResponse, SettingsResponse
 } from '@/lib/api'
 
 // Navigation items
@@ -23,7 +26,9 @@ const navItems = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'devices', label: 'Devices & Interfaces', icon: Wifi },
   { id: 'services', label: 'Services & Protocols', icon: Layers3 },
+  { id: 'traffic', label: 'Traffic Details', icon: Route },
   { id: 'history', label: 'Traffic History', icon: History },
+  { id: 'settings', label: 'Settings', icon: Settings2 },
   { id: 'about', label: 'About Project', icon: BookOpen },
 ]
 
@@ -144,16 +149,18 @@ function Sidebar({
   setActive,
   collapsed,
   setCollapsed,
+  mobileOpen,
   backendOnline
 }: {
   active: string
   setActive: (id: string) => void
   collapsed: boolean
   setCollapsed: (v: boolean) => void
+  mobileOpen: boolean
   backendOnline: boolean
 }) {
   return (
-    <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
+    <aside className={`sidebar ${collapsed ? 'collapsed' : ''} ${mobileOpen ? 'open' : ''}`}>
       <div className="brand">
         <div className="brand-mark"><Network /></div>
         {!collapsed && (
@@ -194,11 +201,11 @@ function Sidebar({
               <span className={`status-dot ${backendOnline ? 'online' : 'offline'}`} />
               API CONNECTION
             </div>
-            <strong>{backendOnline ? 'Python backend online' : 'Python backend offline'}</strong>
+            <strong>{backendOnline ? 'FastAPI backend online' : 'Backend offline'}</strong>
             <p>
               {backendOnline
-                ? 'psutil real-time metrics streaming.'
-                : 'Ensure TrafficLens backend is running and reachable.'}
+                ? 'psutil & Scapy real-time metrics streaming.'
+                : 'Ensure TrafficLens FastAPI backend is running on port 8000.'}
             </p>
             <span className="backend-endpoint" style={{ fontSize: '10px', color: '#62819d', wordBreak: 'break-all' }}>
               {api.baseUrl ? `${api.baseUrl}/api/health` : 'NEXT_PUBLIC_API_URL not set'}
@@ -245,24 +252,48 @@ function ChartTooltip({ active, payload, label }: any) {
 
 function OverviewPage({
   network,
-  history,
+  bandwidth,
+  overview,
+  topDevices,
+  topServices,
   devices,
   services,
+  alerts,
+  history,
+  timelinePoints,
+  timelineRange,
+  setTimelineRange,
   backendOnline,
   loading,
   error,
   go
 }: {
   network: NetworkResponse | null
-  history: HistoryRecord[]
+  bandwidth: BandwidthResponse | null
+  overview: AnalyticsOverviewResponse | null
+  topDevices: TopDeviceItem[]
+  topServices: TopServiceItem[]
   devices: DeviceItem[]
   services: ServiceItem[]
+  alerts: AlertItem[]
+  history: HistoryRecord[]
+  timelinePoints: TimelinePoint[]
+  timelineRange: string
+  setTimelineRange: (r: string) => void
   backendOnline: boolean
   loading: boolean
   error: string
   go: (id: string) => void
 }) {
   const chartData = useMemo(() => {
+    if (timelinePoints && timelinePoints.length > 0) {
+      return timelinePoints.map((p) => ({
+        time: p.time,
+        download: parseFloat(((p.download_bytes || 0) / 1024).toFixed(2)),
+        upload: parseFloat(((p.upload_bytes || 0) / 1024).toFixed(2)),
+        total: parseFloat((((p.download_bytes || 0) + (p.upload_bytes || 0)) / 1024).toFixed(2)),
+      }))
+    }
     if (!history || history.length === 0) return []
     return history.map((h) => ({
       time: h.time || (h.timestamp ? h.timestamp.split('T')[1]?.slice(0, 8) : ''),
@@ -270,10 +301,41 @@ function OverviewPage({
       upload: parseFloat((h.upload / 1024).toFixed(2)),
       total: parseFloat((h.total / 1024).toFixed(2))
     }))
-  }, [history])
+  }, [timelinePoints, history])
 
-  const topServices = useMemo(() => services.slice(0, 5), [services])
-  const topDevices = useMemo(() => devices.slice(0, 4), [devices])
+  const topDevicesDisplay = useMemo(() => {
+    if (topDevices && topDevices.length > 0) return topDevices.slice(0, 5)
+    return devices.slice(0, 5).map(d => ({
+      device: d.device_name,
+      ip_address: d.ip_address,
+      mac_address: d.mac_address,
+      download_bytes: d.download_usage || 0,
+      upload_bytes: d.upload_usage || 0,
+      total_bytes: d.total_usage || 0,
+      total_bytes_formatted: d.total_usage_formatted || '0 B',
+      percentage: 0
+    }))
+  }, [topDevices, devices])
+
+  const topServicesDisplay = useMemo(() => {
+    if (topServices && topServices.length > 0) return topServices.slice(0, 5)
+    return services.slice(0, 5).map(s => ({
+      service: s.service,
+      protocol: s.protocol,
+      download_bytes: s.download_bytes || 0,
+      upload_bytes: s.upload_bytes || 0,
+      total_bytes: s.total_bytes || s.connection_count * 1024,
+      total_bytes_formatted: s.total_bytes_formatted || `${s.connection_count} conns`,
+      percentage: 0
+    }))
+  }, [topServices, services])
+
+  const totalSockets = useMemo(() => {
+    return services.reduce((acc, s) => acc + s.connection_count, 0)
+  }, [services])
+
+  const trafficLevel = overview?.traffic_level || bandwidth?.traffic_level || 'LOW'
+  const trafficLevelTone = trafficLevel === 'HIGH' ? 'red' : trafficLevel === 'MEDIUM' ? 'amber' : 'green'
 
   return (
     <div className="page-content">
@@ -287,6 +349,11 @@ function OverviewPage({
           <Badge tone={backendOnline ? 'green' : 'red'}>
             {backendOnline ? 'Backend Online' : 'Backend Disconnected'}
           </Badge>
+          {overview?.network_load && (
+            <Badge tone={overview.network_load === 'Heavy' ? 'red' : overview.network_load === 'Moderate' ? 'amber' : 'blue'}>
+              Load: {overview.network_load}
+            </Badge>
+          )}
         </div>
       </div>
 
@@ -300,34 +367,47 @@ function OverviewPage({
         </div>
       )}
 
+      {/* Active Alerts Banner if Anomaly Triggered */}
+      {alerts && alerts.length > 0 && (
+        <div className="inline-notice" style={{ borderColor: '#8a6d2b', background: '#261e12', color: '#f7d382', marginBottom: '16px' }}>
+          <AlertTriangle />
+          <span>
+            <strong>Recent Alert:</strong> {alerts[0].message} ({alerts[0].timestamp ? alerts[0].timestamp.split('T')[1]?.slice(0, 8) : 'Just now'})
+          </span>
+          <button onClick={() => go('settings')} style={{ color: '#54c9f4', textDecoration: 'underline', marginLeft: 'auto' }}>
+            View in Settings
+          </button>
+        </div>
+      )}
+
       {/* Hero Stats Grid */}
       <div className="stats-grid">
         <StatCard
           icon={ArrowDownRight}
           label="Download Speed"
-          value={network?.download_speed_formatted || '0.00 B/s'}
-          detail={`Cumulative: ${network?.download_bytes_formatted || '0 B'}`}
+          value={overview?.current_download_rate || bandwidth?.download_speed_formatted || network?.download_speed_formatted || '0.00 B/s'}
+          detail={`Cumulative: ${overview?.download_bytes_formatted || bandwidth?.download_bytes_formatted || network?.download_bytes_formatted || '0 B'}`}
           tone="blue"
         />
         <StatCard
           icon={ArrowUpRight}
           label="Upload Speed"
-          value={network?.upload_speed_formatted || '0.00 B/s'}
-          detail={`Cumulative: ${network?.upload_bytes_formatted || '0 B'}`}
+          value={overview?.current_upload_rate || bandwidth?.upload_speed_formatted || network?.upload_speed_formatted || '0.00 B/s'}
+          detail={`Cumulative: ${overview?.upload_bytes_formatted || bandwidth?.upload_bytes_formatted || network?.upload_bytes_formatted || '0 B'}`}
           tone="green"
         />
         <StatCard
           icon={Activity}
           label="Total Bandwidth Rate"
-          value={network?.total_speed_formatted || '0.00 B/s'}
-          detail={`Total: ${network?.total_bytes_formatted || '0 B'}`}
-          tone="amber"
+          value={bandwidth?.total_speed_formatted || network?.total_speed_formatted || '0.00 B/s'}
+          detail={`Traffic Level: ${trafficLevel} • Peak: ${(overview?.peak_download_mbps || 0).toFixed(2)} Mb/s`}
+          tone={trafficLevelTone}
         />
         <StatCard
           icon={Radio}
-          label="Active TCP/UDP Sockets"
-          value={String(services.reduce((acc, s) => acc + s.connection_count, 0) || (loading ? '—' : '0'))}
-          detail={`${services.length} active application services`}
+          label="Active Sockets & Nodes"
+          value={String(totalSockets || (loading ? '—' : '0'))}
+          detail={`${overview?.active_devices || devices.length} devices • ${services.length} active services`}
           tone="slate"
         />
       </div>
@@ -338,26 +418,50 @@ function OverviewPage({
           <SectionTitle
             eyebrow="BANDWIDTH OVER TIME (KB/S)"
             title="Real-Time Traffic Graph"
-            action={<Badge tone={chartData.length > 0 ? 'blue' : 'amber'}>{chartData.length > 0 ? 'Live psutil feed' : 'Collecting data...'}</Badge>}
+            action={
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                <select
+                  value={timelineRange}
+                  onChange={(e) => setTimelineRange(e.target.value)}
+                  style={{
+                    background: '#0d1d2e',
+                    color: '#8da4bd',
+                    border: '1px solid #1f344d',
+                    borderRadius: '5px',
+                    fontSize: '10px',
+                    padding: '2px 6px'
+                  }}
+                >
+                  <option value="1h">1 Hour</option>
+                  <option value="6h">6 Hours</option>
+                  <option value="24h">24 Hours</option>
+                </select>
+                <Badge tone={chartData.length > 0 ? 'blue' : 'amber'}>
+                  {chartData.length > 0 ? 'Live Telemetry' : 'Collecting data...'}
+                </Badge>
+              </div>
+            }
           />
           <div className="chart-meta">
             <div>
               <strong>
-                {network ? (network.total_speed / 1024).toFixed(2) : '0.00'} <small>KB/s</small>
+                {bandwidth ? bandwidth.total_mbps.toFixed(2) : (network ? (network.total_speed / 1024).toFixed(2) : '0.00')}{' '}
+                <small>{bandwidth ? 'Mbps' : 'KB/s'}</small>
               </strong>
               <span>
-                <ArrowDownRight /> {network?.download_speed_formatted || '0 B/s'} down • <ArrowUpRight /> {network?.upload_speed_formatted || '0 B/s'} up
+                <ArrowDownRight /> {bandwidth?.download_speed_formatted || network?.download_speed_formatted || '0 B/s'} down •{' '}
+                <ArrowUpRight /> {bandwidth?.upload_speed_formatted || network?.upload_speed_formatted || '0 B/s'} up
               </span>
             </div>
             <span style={{ fontSize: '10px', color: '#748ba3' }}>
-              {chartData.length} records in buffer
+              {chartData.length} records in buffer • Interface: {bandwidth?.active_interface || 'Default'}
             </span>
           </div>
 
           <div className="chart-box">
             {chartData.length === 0 ? (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#6e8098' }}>
-                {loading ? 'Collecting initial network samples...' : 'Awaiting data from Flask backend...'}
+                {loading ? 'Collecting initial network samples...' : 'Awaiting telemetry from FastAPI backend...'}
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
@@ -397,28 +501,35 @@ function OverviewPage({
                 <tr>
                   <th>Service</th>
                   <th>Proto</th>
-                  <th>Conns</th>
-                  <th>Status</th>
+                  <th>Traffic Share</th>
+                  <th>Usage</th>
                 </tr>
               </thead>
               <tbody>
-                {topServices.length === 0 ? (
+                {topServicesDisplay.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="muted-cell" style={{ textAlign: 'center', padding: '24px 0' }}>
                       {loading ? 'Inspecting active sockets...' : 'No active network services found.'}
                     </td>
                   </tr>
                 ) : (
-                  topServices.map((s, idx) => (
+                  topServicesDisplay.map((s, idx) => (
                     <tr key={idx}>
                       <td><strong style={{ color: '#e8f0fa' }}>{s.service}</strong></td>
                       <td><span className="mono">{s.protocol}</span></td>
-                      <td className="result-text">{s.connection_count}</td>
                       <td>
-                        <Badge tone={s.status === 'ESTABLISHED' ? 'green' : s.status === 'LISTEN' ? 'blue' : 'amber'}>
-                          {s.status}
-                        </Badge>
+                        {s.percentage > 0 ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <div style={{ flex: 1, height: '4px', background: '#1c2d42', borderRadius: '2px', overflow: 'hidden' }}>
+                              <div style={{ width: `${s.percentage}%`, height: '100%', background: '#48c5ff' }} />
+                            </div>
+                            <span style={{ fontSize: '9px', color: '#748ba3' }}>{s.percentage}%</span>
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: '10px', color: '#748ba3' }}>Active</span>
+                        )}
                       </td>
+                      <td className="result-text">{s.total_bytes_formatted}</td>
                     </tr>
                   ))
                 )}
@@ -431,8 +542,8 @@ function OverviewPage({
       {/* Interfaces & Device Snapshot */}
       <Card className="recent-card" style={{ marginTop: '16px' }}>
         <SectionTitle
-          eyebrow="NETWORK INTERFACES"
-          title="Hardware Adapters & Byte Counters"
+          eyebrow="NETWORK INTERFACES & TOP DEVICES"
+          title="Hardware Adapters & Data Usage"
           action={<button className="text-btn" onClick={() => go('devices')}>Manage devices <ArrowUpRight /></button>}
         />
         <div className="table-wrap">
@@ -440,33 +551,38 @@ function OverviewPage({
             <thead>
               <tr>
                 <th>Device / Interface</th>
-                <th>Type</th>
                 <th>IP Address</th>
                 <th>MAC Address</th>
-                <th>Status</th>
-                <th>Download Usage</th>
-                <th>Upload Usage</th>
-                <th>Total Traffic</th>
+                <th>Share %</th>
+                <th>Total Usage</th>
               </tr>
             </thead>
             <tbody>
-              {topDevices.length === 0 ? (
+              {topDevicesDisplay.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="muted-cell" style={{ textAlign: 'center', padding: '24px 0' }}>
+                  <td colSpan={5} className="muted-cell" style={{ textAlign: 'center', padding: '24px 0' }}>
                     {loading ? 'Scanning local network interfaces...' : 'No network interfaces detected.'}
                   </td>
                 </tr>
               ) : (
-                topDevices.map((d, i) => (
+                topDevicesDisplay.map((d, i) => (
                   <tr key={i}>
-                    <td><strong style={{ color: '#dceaf7' }}>{d.device_name}</strong></td>
-                    <td>{d.device_type === 'interface' ? 'Hardware NIC' : 'LAN Node'}</td>
-                    <td className="mono">{d.ip_address}</td>
-                    <td className="mono">{d.mac_address}</td>
-                    <td><Badge tone={d.status === 'online' ? 'green' : 'slate'}>{d.status}</Badge></td>
-                    <td>{d.download_usage_formatted}</td>
-                    <td>{d.upload_usage_formatted}</td>
-                    <td><strong style={{ color: '#48c5ff' }}>{d.total_usage_formatted}</strong></td>
+                    <td><strong style={{ color: '#dceaf7' }}>{d.device}</strong></td>
+                    <td className="mono">{d.ip_address || '—'}</td>
+                    <td className="mono">{d.mac_address || '—'}</td>
+                    <td>
+                      {d.percentage > 0 ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', maxWidth: '120px' }}>
+                          <div style={{ flex: 1, height: '4px', background: '#1c2d42', borderRadius: '2px', overflow: 'hidden' }}>
+                            <div style={{ width: `${d.percentage}%`, height: '100%', background: '#34d399' }} />
+                          </div>
+                          <span style={{ fontSize: '9px', color: '#748ba3' }}>{d.percentage}%</span>
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: '10px', color: '#748ba3' }}>—</span>
+                      )}
+                    </td>
+                    <td><strong style={{ color: '#48c5ff' }}>{d.total_bytes_formatted}</strong></td>
                   </tr>
                 ))
               )}
@@ -479,7 +595,7 @@ function OverviewPage({
 }
 
 // ==============================================================================
-// 2. DEVICES & INTERFACES PAGE
+// 2. DEVICES & INTERFACES PAGE (WITH MODAL INSPECTION)
 // ==============================================================================
 
 function DevicesPage({
@@ -495,6 +611,26 @@ function DevicesPage({
 }) {
   const [filter, setFilter] = useState('All')
   const [search, setSearch] = useState('')
+  const [selectedDevice, setSelectedDevice] = useState<DeviceItem | null>(null)
+  const [deviceDetail, setDeviceDetail] = useState<DeviceDetailResponse | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+
+  const handleInspectDevice = async (device: DeviceItem) => {
+    setSelectedDevice(device)
+    if (device.id) {
+      setDetailLoading(true)
+      try {
+        const detail = await api.getDevice(device.id)
+        setDeviceDetail(detail)
+      } catch {
+        setDeviceDetail(null)
+      } finally {
+        setDetailLoading(false)
+      }
+    } else {
+      setDeviceDetail(null)
+    }
+  }
 
   const filtered = useMemo(() => {
     return devices.filter((d) => {
@@ -566,12 +702,13 @@ function DevicesPage({
                 <th>Download</th>
                 <th>Upload</th>
                 <th>Total Usage</th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="muted-cell" style={{ textAlign: 'center', padding: '30px 0' }}>
+                  <td colSpan={10} className="muted-cell" style={{ textAlign: 'center', padding: '30px 0' }}>
                     {loading ? 'Loading devices from backend...' : 'No matching network devices or interfaces found.'}
                   </td>
                 </tr>
@@ -595,6 +732,15 @@ function DevicesPage({
                     <td>{d.download_usage_formatted}</td>
                     <td>{d.upload_usage_formatted}</td>
                     <td><strong style={{ color: '#48c5ff' }}>{d.total_usage_formatted}</strong></td>
+                    <td>
+                      <button
+                        className="text-btn"
+                        onClick={() => handleInspectDevice(d)}
+                        title="Inspect Device Telemetry"
+                      >
+                        Inspect <ArrowUpRight />
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}
@@ -609,12 +755,89 @@ function DevicesPage({
           <Info size={16} /> Computer Networks PBL Scope & Technical Limitation Note
         </h3>
         <p style={{ margin: 0, color: '#90a4ba', fontSize: '11px', lineHeight: '1.6' }}>
-          Under standard operating system architectures without privileged packet sniffing or router-level SNMP access,
-          an individual host machine can only measure exact byte counters for its own hardware network interfaces (Wi-Fi, Ethernet).
-          Neighbouring LAN devices detected via ARP cache are displayed above for network topology awareness, with traffic accounting
-          transparently marked as requiring router port mirroring or promiscuous capture.
+          Under standard operating system architectures without elevated raw promiscuous capture or router SNMP access,
+          an individual host machine measures hardware I/O byte counters for its own network interfaces.
+          Neighbouring LAN devices discovered through the ARP cache table are visualized for network topology mapping.
         </p>
       </Card>
+
+      {/* Device Inspection Modal */}
+      {selectedDevice && (
+        <div className="modal-backdrop" onClick={() => setSelectedDevice(null)}>
+          <div className="detail-modal" onClick={(e) => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => setSelectedDevice(null)}>
+              <X />
+            </button>
+            <p className="eyebrow"><span className="eyebrow-mark" /> DEVICE TELEMETRY</p>
+            <h2>{selectedDevice.device_name}</h2>
+
+            <div className="detail-grid">
+              <div>
+                <span>IP Address</span>
+                <strong>{selectedDevice.ip_address}</strong>
+              </div>
+              <div>
+                <span>MAC Address</span>
+                <strong>{selectedDevice.mac_address}</strong>
+              </div>
+              <div>
+                <span>Device Type</span>
+                <strong>{selectedDevice.device_type === 'interface' ? 'Hardware Adapter' : 'LAN Neighbor'}</strong>
+              </div>
+              <div>
+                <span>Status</span>
+                <strong>{selectedDevice.status}</strong>
+              </div>
+              <div>
+                <span>Download Total</span>
+                <strong style={{ color: '#38bdf8' }}>{selectedDevice.download_usage_formatted}</strong>
+              </div>
+              <div>
+                <span>Upload Total</span>
+                <strong style={{ color: '#34d399' }}>{selectedDevice.upload_usage_formatted}</strong>
+              </div>
+            </div>
+
+            <div style={{ marginTop: '20px' }}>
+              <h3 style={{ fontSize: '13px', margin: '0 0 10px', color: '#dceaf7' }}>
+                Recent Traffic Flows Associated With Device
+              </h3>
+              {detailLoading ? (
+                <p style={{ color: '#6e8098', fontSize: '11px' }}>Loading flow records from database...</p>
+              ) : deviceDetail && deviceDetail.recent_traffic && deviceDetail.recent_traffic.length > 0 ? (
+                <div className="table-wrap" style={{ maxHeight: '180px', overflowY: 'auto', padding: 0 }}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Time</th>
+                        <th>Dest IP</th>
+                        <th>Proto</th>
+                        <th>Service</th>
+                        <th>Bytes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {deviceDetail.recent_traffic.slice(0, 5).map((t, i) => (
+                        <tr key={i}>
+                          <td className="mono">{t.timestamp ? t.timestamp.split('T')[1]?.slice(0, 8) : '—'}</td>
+                          <td className="mono">{t.destination_ip}</td>
+                          <td><span className="mono">{t.protocol}</span></td>
+                          <td>{t.service}</td>
+                          <td className="result-text">{t.bytes} B</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p style={{ color: '#6e8098', fontSize: '11px', margin: 0 }}>
+                  No recent traffic records found for this specific device in the database.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -625,11 +848,13 @@ function DevicesPage({
 
 function ServicesPage({
   services,
+  topServices,
   loading,
   error,
   onRefresh
 }: {
   services: ServiceItem[]
+  topServices: TopServiceItem[]
   loading: boolean
   error: string
   onRefresh: () => void
@@ -706,6 +931,30 @@ function ServicesPage({
         />
       </div>
 
+      {/* Top Services Bandwidth Leaderboard if available */}
+      {topServices && topServices.length > 0 && (
+        <Card style={{ marginBottom: '18px', padding: '16px 20px' }}>
+          <SectionTitle eyebrow="BANDWIDTH SHARE" title="Top Network Bandwidth Consumers" />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', marginTop: '12px' }}>
+            {topServices.slice(0, 4).map((s, idx) => (
+              <div key={idx} style={{ padding: '12px', background: '#0a1625', border: '1px solid #1c2e42', borderRadius: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <strong style={{ color: '#e8f0fa', fontSize: '12px' }}>{s.service}</strong>
+                  <span className="mono" style={{ fontSize: '10px', color: '#65d0f4' }}>{s.protocol}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#88a0b9', marginBottom: '6px' }}>
+                  <span>Usage: {s.total_bytes_formatted}</span>
+                  <span>{s.percentage}%</span>
+                </div>
+                <div style={{ height: '4px', background: '#1c2d42', borderRadius: '2px', overflow: 'hidden' }}>
+                  <div style={{ width: `${s.percentage}%`, height: '100%', background: '#48c5ff' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       <Card className="history-card">
         <div className="filter-bar">
           <div className="search-wrap">
@@ -774,7 +1023,248 @@ function ServicesPage({
 }
 
 // ==============================================================================
-// 4. TRAFFIC HISTORY PAGE
+// 4. TRAFFIC DETAILS PAGE (DEEP PACKET INSPECTION & SUMMARY)
+// ==============================================================================
+
+function TrafficPage({
+  trafficRecords,
+  trafficSummary,
+  loading,
+  error,
+  onRefresh
+}: {
+  trafficRecords: TrafficRecordItem[]
+  trafficSummary: TrafficSummaryResponse | null
+  loading: boolean
+  error: string
+  onRefresh: () => void
+}) {
+  const [filterProto, setFilterProto] = useState('All')
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const pageSize = 15
+
+  const filtered = useMemo(() => {
+    return trafficRecords.filter((t) => {
+      const matchProto = filterProto === 'All' || t.protocol.toUpperCase() === filterProto.toUpperCase()
+      const matchSearch =
+        (t.source_ip && t.source_ip.includes(search)) ||
+        (t.destination_ip && t.destination_ip.includes(search)) ||
+        (t.service && t.service.toLowerCase().includes(search.toLowerCase())) ||
+        (t.protocol && t.protocol.toLowerCase().includes(search.toLowerCase()))
+      return matchProto && matchSearch
+    })
+  }, [trafficRecords, filterProto, search])
+
+  const paginated = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return filtered.slice(start, start + pageSize)
+  }, [filtered, page])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
+
+  return (
+    <div className="page-content">
+      <div className="page-heading">
+        <div>
+          <p className="eyebrow"><span className="eyebrow-mark" /> PACKET-LEVEL INSPECTION</p>
+          <h1>Traffic Details & Packet Flows</h1>
+          <p>Real-time packet capture, protocol breakdown, and network endpoint communication logs.</p>
+        </div>
+        <div className="heading-actions">
+          <Badge tone={trafficSummary?.packet_capture_available ? 'green' : 'blue'}>
+            {trafficSummary?.packet_capture_available ? 'Scapy Npcap Active' : 'Socket Telemetry Engine'}
+          </Badge>
+          <button className="secondary-btn" onClick={onRefresh}>
+            <RefreshCw /> Refresh Flows
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="inline-notice" style={{ borderColor: '#80343f', background: '#2b1419', color: '#ff9ba7', marginBottom: '16px' }}>
+          <AlertTriangle />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {/* Traffic Summary Cards */}
+      <div className="stats-grid">
+        <StatCard
+          icon={Activity}
+          label="Total Captured Packets"
+          value={String(trafficSummary?.total_packets || trafficRecords.reduce((acc, t) => acc + (t.packet_count || 1), 0))}
+          detail="Packets captured by monitor engine"
+          tone="blue"
+        />
+        <StatCard
+          icon={Database}
+          label="Cumulative Volume"
+          value={trafficSummary?.total_bytes_formatted || '0 B'}
+          detail="Bytes inspected across interfaces"
+          tone="green"
+        />
+        <StatCard
+          icon={Layers3}
+          label="Protocol Distribution"
+          value={`${trafficSummary?.tcp_packets || 0} TCP`}
+          detail={`${trafficSummary?.udp_packets || 0} UDP • ${trafficSummary?.icmp_packets || 0} ICMP`}
+          tone="amber"
+        />
+        <StatCard
+          icon={ShieldCheck}
+          label="Engine Driver"
+          value={trafficSummary?.packet_capture_available ? 'Promiscuous' : 'Host Socket'}
+          detail="Windows telemetry adapter"
+          tone="slate"
+        />
+      </div>
+
+      {/* Protocol Summary Breakdown Card */}
+      {trafficSummary && (
+        <Card style={{ marginBottom: '18px', padding: '18px 22px' }}>
+          <SectionTitle eyebrow="PROTOCOL ANALYTICS" title="Layer 4 Protocol Distribution" />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px', marginTop: '12px' }}>
+            <div style={{ padding: '12px', background: '#0a1625', border: '1px solid #1c2e42', borderRadius: '8px' }}>
+              <span style={{ fontSize: '10px', color: '#88a0b9' }}>TCP PACKETS</span>
+              <strong style={{ display: 'block', fontSize: '18px', color: '#38bdf8', marginTop: '4px' }}>
+                {trafficSummary.tcp_packets}
+              </strong>
+              <span style={{ fontSize: '10px', color: '#557291' }}>
+                {trafficSummary.total_packets > 0 ? `${((trafficSummary.tcp_packets / trafficSummary.total_packets) * 100).toFixed(1)}% of total` : '0%'}
+              </span>
+            </div>
+            <div style={{ padding: '12px', background: '#0a1625', border: '1px solid #1c2e42', borderRadius: '8px' }}>
+              <span style={{ fontSize: '10px', color: '#88a0b9' }}>UDP DATAGRAMS</span>
+              <strong style={{ display: 'block', fontSize: '18px', color: '#34d399', marginTop: '4px' }}>
+                {trafficSummary.udp_packets}
+              </strong>
+              <span style={{ fontSize: '10px', color: '#557291' }}>
+                {trafficSummary.total_packets > 0 ? `${((trafficSummary.udp_packets / trafficSummary.total_packets) * 100).toFixed(1)}% of total` : '0%'}
+              </span>
+            </div>
+            <div style={{ padding: '12px', background: '#0a1625', border: '1px solid #1c2e42', borderRadius: '8px' }}>
+              <span style={{ fontSize: '10px', color: '#88a0b9' }}>ICMP PACKETS</span>
+              <strong style={{ display: 'block', fontSize: '18px', color: '#f7b955', marginTop: '4px' }}>
+                {trafficSummary.icmp_packets}
+              </strong>
+              <span style={{ fontSize: '10px', color: '#557291' }}>
+                {trafficSummary.total_packets > 0 ? `${((trafficSummary.icmp_packets / trafficSummary.total_packets) * 100).toFixed(1)}% of total` : '0%'}
+              </span>
+            </div>
+            <div style={{ padding: '12px', background: '#0a1625', border: '1px solid #1c2e42', borderRadius: '8px' }}>
+              <span style={{ fontSize: '10px', color: '#88a0b9' }}>OTHER / RAW</span>
+              <strong style={{ display: 'block', fontSize: '18px', color: '#90a4ba', marginTop: '4px' }}>
+                {trafficSummary.other_packets}
+              </strong>
+              <span style={{ fontSize: '10px', color: '#557291' }}>
+                {trafficSummary.total_packets > 0 ? `${((trafficSummary.other_packets / trafficSummary.total_packets) * 100).toFixed(1)}% of total` : '0%'}
+              </span>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Traffic Flow Records Table */}
+      <Card className="history-card">
+        <div className="filter-bar">
+          <div className="search-wrap">
+            <Search />
+            <input
+              placeholder="Search flows by IP, port, or service name..."
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+            />
+          </div>
+          <label className="filter-btn">
+            <SlidersHorizontal />
+            <select value={filterProto} onChange={(e) => { setFilterProto(e.target.value); setPage(1) }}>
+              <option>All</option>
+              <option>TCP</option>
+              <option>UDP</option>
+              <option>ICMP</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Source Address</th>
+                <th>Destination Address</th>
+                <th>Protocol</th>
+                <th>Inferred Service</th>
+                <th>Packets</th>
+                <th>Data Size</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paginated.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="muted-cell" style={{ textAlign: 'center', padding: '30px 0' }}>
+                    {loading ? 'Capturing network flows...' : 'No matching traffic flow records captured yet.'}
+                  </td>
+                </tr>
+              ) : (
+                paginated.map((t, idx) => (
+                  <tr key={idx}>
+                    <td className="mono" style={{ color: '#7a91a9' }}>
+                      {t.timestamp ? (t.timestamp.includes('T') ? t.timestamp.split('T')[1]?.slice(0, 8) : t.timestamp) : '—'}
+                    </td>
+                    <td className="mono">
+                      {t.source_ip}{t.source_port ? `:${t.source_port}` : ''}
+                    </td>
+                    <td className="mono" style={{ color: '#88a0b9' }}>
+                      {t.destination_ip}{t.destination_port ? `:${t.destination_port}` : ''}
+                    </td>
+                    <td>
+                      <span className="mono">{t.protocol}</span>
+                    </td>
+                    <td>
+                      <strong style={{ color: '#e8f0fa' }}>{t.service}</strong>
+                    </td>
+                    <td>{t.packet_count || 1}</td>
+                    <td>
+                      <strong style={{ color: '#48c5ff' }}>{t.bytes_formatted || `${t.bytes} B`}</strong>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="pagination">
+          <span>
+            Showing {paginated.length} of {filtered.length} flow records • Page {page} of {totalPages}
+          </span>
+          <div>
+            <button
+              className="icon-btn small-btn"
+              onClick={() => setPage(Math.max(1, page - 1))}
+              disabled={page === 1}
+            >
+              <ChevronLeft />
+            </button>
+            <button className="page-number active">{page}</button>
+            <button
+              className="icon-btn small-btn"
+              onClick={() => setPage(Math.min(totalPages, page + 1))}
+              disabled={page >= totalPages}
+            >
+              <ChevronRight />
+            </button>
+          </div>
+        </div>
+      </Card>
+    </div>
+  )
+}
+
+// ==============================================================================
+// 5. TRAFFIC HISTORY PAGE (WITH TAB FILTERING: BANDWIDTH, TRAFFIC, DEVICES)
 // ==============================================================================
 
 function HistoryPage({
@@ -788,20 +1278,65 @@ function HistoryPage({
   error: string
   onRefresh: () => void
 }) {
+  const [historyTab, setHistoryTab] = useState<'bandwidth' | 'traffic' | 'devices'>('bandwidth')
+  const [trafficHistory, setTrafficHistory] = useState<any[]>([])
+  const [deviceHistory, setDeviceHistory] = useState<any[]>([])
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const pageSize = 15
 
+  const loadSubHistory = useCallback(async () => {
+    if (historyTab === 'traffic') {
+      try {
+        const res = await api.getHistoryTraffic(100)
+        setTrafficHistory(res.records || [])
+      } catch {
+        setTrafficHistory([])
+      }
+    } else if (historyTab === 'devices') {
+      try {
+        const res = await api.getHistoryDevices(100)
+        setDeviceHistory(res.records || [])
+      } catch {
+        setDeviceHistory([])
+      }
+    }
+  }, [historyTab])
+
+  useEffect(() => {
+    loadSubHistory()
+  }, [loadSubHistory])
+
+  // Filtered dataset depending on active tab
   const filtered = useMemo(() => {
-    return history.filter((h) => {
-      const matchSearch =
-        (h.time && h.time.includes(search)) ||
-        (h.timestamp && h.timestamp.includes(search)) ||
-        h.download_formatted.toLowerCase().includes(search.toLowerCase()) ||
-        h.upload_formatted.toLowerCase().includes(search.toLowerCase())
-      return matchSearch
-    })
-  }, [history, search])
+    if (historyTab === 'bandwidth') {
+      return history.filter((h) => {
+        const match =
+          (h.time && h.time.includes(search)) ||
+          (h.timestamp && h.timestamp.includes(search)) ||
+          (h.download_formatted && h.download_formatted.toLowerCase().includes(search.toLowerCase())) ||
+          (h.upload_formatted && h.upload_formatted.toLowerCase().includes(search.toLowerCase()))
+        return match
+      })
+    } else if (historyTab === 'traffic') {
+      return trafficHistory.filter((t) => {
+        const match =
+          (t.source_ip && t.source_ip.includes(search)) ||
+          (t.destination_ip && t.destination_ip.includes(search)) ||
+          (t.service && t.service.toLowerCase().includes(search.toLowerCase())) ||
+          (t.protocol && t.protocol.toLowerCase().includes(search.toLowerCase()))
+        return match
+      })
+    } else {
+      return deviceHistory.filter((d) => {
+        const match =
+          (d.hostname && d.hostname.toLowerCase().includes(search.toLowerCase())) ||
+          (d.ip_address && d.ip_address.includes(search)) ||
+          (d.mac_address && d.mac_address.toLowerCase().includes(search.toLowerCase()))
+        return match
+      })
+    }
+  }, [historyTab, history, trafficHistory, deviceHistory, search])
 
   const paginated = useMemo(() => {
     const start = (page - 1) * pageSize
@@ -815,11 +1350,11 @@ function HistoryPage({
       <div className="page-heading">
         <div>
           <p className="eyebrow"><span className="eyebrow-mark" /> TIME-SERIES TELEMETRY</p>
-          <h1>Traffic History Log</h1>
-          <p>Rolling in-memory bandwidth measurement records captured by the Flask backend.</p>
+          <h1>Traffic & Network History</h1>
+          <p>Stored historical bandwidth samples, traffic flows, and device discovery logs.</p>
         </div>
         <div className="heading-actions">
-          <button className="secondary-btn" onClick={onRefresh}>
+          <button className="secondary-btn" onClick={() => { onRefresh(); loadSubHistory() }}>
             <RefreshCw /> Refresh History
           </button>
         </div>
@@ -832,58 +1367,152 @@ function HistoryPage({
         </div>
       )}
 
+      {/* History Log Mode Selector Tabs */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+        <button
+          className={historyTab === 'bandwidth' ? 'primary-btn' : 'secondary-btn'}
+          onClick={() => { setHistoryTab('bandwidth'); setPage(1) }}
+        >
+          <Activity size={14} /> Bandwidth Log
+        </button>
+        <button
+          className={historyTab === 'traffic' ? 'primary-btn' : 'secondary-btn'}
+          onClick={() => { setHistoryTab('traffic'); setPage(1) }}
+        >
+          <Route size={14} /> Traffic Flows
+        </button>
+        <button
+          className={historyTab === 'devices' ? 'primary-btn' : 'secondary-btn'}
+          onClick={() => { setHistoryTab('devices'); setPage(1) }}
+        >
+          <Wifi size={14} /> Device Discoveries
+        </button>
+      </div>
+
       <Card className="history-card">
         <div className="filter-bar">
           <div className="search-wrap">
             <Search />
             <input
-              placeholder="Search history by timestamp or speed..."
+              placeholder={`Search ${historyTab} history...`}
               value={search}
               onChange={(e) => { setSearch(e.target.value); setPage(1) }}
             />
           </div>
-          <Badge tone="blue">{filtered.length} total samples</Badge>
+          <Badge tone="blue">{filtered.length} total records</Badge>
         </div>
 
         <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Sample Time</th>
-                <th>ISO Timestamp</th>
-                <th>Download Speed</th>
-                <th>Upload Speed</th>
-                <th>Combined Bandwidth</th>
-                <th>Raw Bytes Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {paginated.length === 0 ? (
+          {historyTab === 'bandwidth' && (
+            <table>
+              <thead>
                 <tr>
-                  <td colSpan={6} className="muted-cell" style={{ textAlign: 'center', padding: '30px 0' }}>
-                    {loading ? 'Streaming history records...' : 'No history records captured yet.'}
-                  </td>
+                  <th>Sample Time</th>
+                  <th>ISO Timestamp</th>
+                  <th>Download Speed</th>
+                  <th>Upload Speed</th>
+                  <th>Combined Bandwidth</th>
+                  <th>Cumulative MB</th>
                 </tr>
-              ) : (
-                paginated.map((h, idx) => (
-                  <tr key={idx}>
-                    <td>
-                      <span className="table-target">
-                        <Clock3 /> {h.time}
-                      </span>
-                    </td>
-                    <td className="mono" style={{ color: '#7a91a9' }}>{h.timestamp}</td>
-                    <td style={{ color: '#38bdf8' }}>{h.download_formatted}</td>
-                    <td style={{ color: '#34d399' }}>{h.upload_formatted}</td>
-                    <td><strong style={{ color: '#f7b955' }}>{h.total_formatted}</strong></td>
-                    <td className="mono">
-                      {h.bytes_recv_total ? `${(h.bytes_recv_total / (1024 * 1024)).toFixed(1)} MB` : '—'}
+              </thead>
+              <tbody>
+                {paginated.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="muted-cell" style={{ textAlign: 'center', padding: '30px 0' }}>
+                      {loading ? 'Streaming history records...' : 'No bandwidth history records captured yet.'}
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  paginated.map((h: HistoryRecord, idx) => (
+                    <tr key={idx}>
+                      <td>
+                        <span className="table-target">
+                          <Clock3 /> {h.time}
+                        </span>
+                      </td>
+                      <td className="mono" style={{ color: '#7a91a9' }}>{h.timestamp}</td>
+                      <td style={{ color: '#38bdf8' }}>{h.download_formatted}</td>
+                      <td style={{ color: '#34d399' }}>{h.upload_formatted}</td>
+                      <td><strong style={{ color: '#f7b955' }}>{h.total_formatted}</strong></td>
+                      <td className="mono">
+                        {h.bytes_recv_total ? `${(h.bytes_recv_total / (1024 * 1024)).toFixed(1)} MB` : '—'}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          )}
+
+          {historyTab === 'traffic' && (
+            <table>
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Source IP</th>
+                  <th>Destination IP</th>
+                  <th>Protocol</th>
+                  <th>Service</th>
+                  <th>Bytes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginated.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="muted-cell" style={{ textAlign: 'center', padding: '30px 0' }}>
+                      No traffic history flows stored in database yet.
+                    </td>
+                  </tr>
+                ) : (
+                  paginated.map((t: any, idx) => (
+                    <tr key={idx}>
+                      <td className="mono">{t.timestamp ? t.timestamp.split('T')[1]?.slice(0, 8) : '—'}</td>
+                      <td className="mono">{t.source_ip}</td>
+                      <td className="mono" style={{ color: '#88a0b9' }}>{t.destination_ip}</td>
+                      <td><span className="mono">{t.protocol}</span></td>
+                      <td><strong style={{ color: '#e8f0fa' }}>{t.service}</strong></td>
+                      <td className="result-text">{t.bytes ? `${t.bytes} B` : '—'}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          )}
+
+          {historyTab === 'devices' && (
+            <table>
+              <thead>
+                <tr>
+                  <th>First Seen</th>
+                  <th>Last Seen</th>
+                  <th>Device / Hostname</th>
+                  <th>IP Address</th>
+                  <th>MAC Address</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginated.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="muted-cell" style={{ textAlign: 'center', padding: '30px 0' }}>
+                      No device discovery history stored in database yet.
+                    </td>
+                  </tr>
+                ) : (
+                  paginated.map((d: any, idx) => (
+                    <tr key={idx}>
+                      <td className="mono">{d.first_seen ? d.first_seen.split('T')[0] : '—'}</td>
+                      <td className="mono">{d.last_seen ? d.last_seen.split('T')[1]?.slice(0, 8) : '—'}</td>
+                      <td><strong style={{ color: '#dceaf7' }}>{d.hostname || d.ip_address}</strong></td>
+                      <td className="mono">{d.ip_address}</td>
+                      <td className="mono">{d.mac_address}</td>
+                      <td><Badge tone="green">{d.status || 'online'}</Badge></td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          )}
         </div>
 
         <div className="pagination">
@@ -914,7 +1543,214 @@ function HistoryPage({
 }
 
 // ==============================================================================
-// 5. ABOUT PROJECT PAGE
+// 6. SETTINGS PAGE (BACKEND CONFIGURATION & ALERTS)
+// ==============================================================================
+
+function SettingsPage({
+  settings,
+  alerts,
+  loading,
+  onSave,
+  onRefresh
+}: {
+  settings: SettingsResponse | null
+  alerts: AlertItem[]
+  loading: boolean
+  onSave: (data: Partial<SettingsResponse>) => Promise<void>
+  onRefresh: () => void
+}) {
+  const [interval, setIntervalVal] = useState<number>(settings?.sample_interval_seconds || 1)
+  const [retention, setRetention] = useState<number>(settings?.history_retention_hours || 48)
+  const [alertThreshold, setAlertThreshold] = useState<number>(settings?.bandwidth_alert_threshold_mbps || 50)
+  const [saving, setSaving] = useState(false)
+  const [saveMessage, setSaveMessage] = useState('')
+
+  useEffect(() => {
+    if (settings) {
+      setIntervalVal(settings.sample_interval_seconds)
+      setRetention(settings.history_retention_hours)
+      setAlertThreshold(settings.bandwidth_alert_threshold_mbps)
+    }
+  }, [settings])
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    setSaveMessage('')
+    try {
+      await onSave({
+        sample_interval_seconds: Number(interval),
+        history_retention_hours: Number(retention),
+        bandwidth_alert_threshold_mbps: Number(alertThreshold)
+      })
+      setSaveMessage('Settings updated successfully in FastAPI backend!')
+      setTimeout(() => setSaveMessage(''), 4000)
+    } catch (err: any) {
+      setSaveMessage(`Failed to save settings: ${err.message}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="page-content">
+      <div className="page-heading">
+        <div>
+          <p className="eyebrow"><span className="eyebrow-mark" /> SYSTEM CONFIGURATION</p>
+          <h1>Settings & Telemetry Thresholds</h1>
+          <p>Configure background sampling frequency, anomaly alert triggers, and inspect active warnings.</p>
+        </div>
+        <div className="heading-actions">
+          <button className="secondary-btn" onClick={onRefresh}>
+            <RefreshCw /> Refresh Settings
+          </button>
+        </div>
+      </div>
+
+      {saveMessage && (
+        <div
+          className="inline-notice"
+          style={{
+            borderColor: saveMessage.includes('Failed') ? '#80343f' : '#245b4c',
+            background: saveMessage.includes('Failed') ? '#2b1419' : '#12352f',
+            color: saveMessage.includes('Failed') ? '#ff9ba7' : '#56d5a8',
+            marginBottom: '16px'
+          }}
+        >
+          <CheckCircle2 />
+          <span>{saveMessage}</span>
+        </div>
+      )}
+
+      <div className="dashboard-grid">
+        {/* Settings Form */}
+        <Card style={{ padding: '22px' }}>
+          <SectionTitle eyebrow="RUNTIME THRESHOLDS" title="Telemetry Sampling & Alert Triggers" />
+          <form onSubmit={handleSave} style={{ marginTop: '18px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div className="field">
+              <label>SAMPLE INTERVAL (SECONDS)</label>
+              <input
+                type="number"
+                min="1"
+                max="60"
+                value={interval}
+                onChange={(e) => setIntervalVal(Number(e.target.value))}
+                required
+              />
+              <span style={{ fontSize: '10px', color: '#6e839d' }}>Frequency of psutil network delta calculations.</span>
+            </div>
+
+            <div className="field">
+              <label>BANDWIDTH ALERT SPIKE THRESHOLD (MBPS)</label>
+              <input
+                type="number"
+                min="1"
+                max="10000"
+                value={alertThreshold}
+                onChange={(e) => setAlertThreshold(Number(e.target.value))}
+                required
+              />
+              <span style={{ fontSize: '10px', color: '#6e839d' }}>Rate above which an anomaly alert record is generated.</span>
+            </div>
+
+            <div className="field">
+              <label>DATABASE HISTORY RETENTION (HOURS)</label>
+              <input
+                type="number"
+                min="1"
+                max="720"
+                value={retention}
+                onChange={(e) => setRetention(Number(e.target.value))}
+                required
+              />
+              <span style={{ fontSize: '10px', color: '#6e839d' }}>Duration before old bandwidth samples are pruned.</span>
+            </div>
+
+            <button type="submit" className="primary-btn" disabled={saving} style={{ alignSelf: 'flex-start', marginTop: '6px' }}>
+              {saving ? <Loader2 className="spin" /> : <Settings2 />}
+              {saving ? 'Saving...' : 'Save Configuration'}
+            </button>
+          </form>
+        </Card>
+
+        {/* Runtime Environment Info */}
+        <Card style={{ padding: '22px' }}>
+          <SectionTitle eyebrow="SERVER STATUS" title="Backend Environment" />
+          <div style={{ marginTop: '18px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div className="endpoint">
+              <span>Application:</span>
+              <code>{settings?.app_name || 'TrafficLens'}</code>
+            </div>
+            <div className="endpoint">
+              <span>Environment:</span>
+              <code>{settings?.app_env || 'Development'}</code>
+            </div>
+            <div className="endpoint">
+              <span>Monitoring Mode:</span>
+              <code>{settings?.monitoring_mode || 'psutil + Scapy'}</code>
+            </div>
+            <div className="endpoint">
+              <span>Packet Capture Driver:</span>
+              <code>{settings?.packet_capture_available ? 'Available (Npcap)' : 'Socket Telemetry Fallback'}</code>
+            </div>
+            <div className="endpoint">
+              <span>Low / Med Thresholds:</span>
+              <code>{settings?.traffic_level_low_mbps} / {settings?.traffic_level_medium_mbps} Mbps</code>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* Active Alerts List */}
+      <Card className="recent-card" style={{ marginTop: '18px' }}>
+        <SectionTitle eyebrow="TELEMETRY ALERTS" title="Active Anomaly & Traffic Spike Notifications" />
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Alert Timestamp</th>
+                <th>Category</th>
+                <th>Severity</th>
+                <th>Alert Notification Message</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {alerts.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="muted-cell" style={{ textAlign: 'center', padding: '28px 0' }}>
+                    {loading ? 'Checking for system alerts...' : 'No anomalous spikes or alerts detected. Network operating normally.'}
+                  </td>
+                </tr>
+              ) : (
+                alerts.map((a, i) => (
+                  <tr key={i}>
+                    <td className="mono">{a.timestamp ? a.timestamp.split('T')[1]?.slice(0, 8) : '—'}</td>
+                    <td><span className="mono">{a.type}</span></td>
+                    <td>
+                      <Badge tone={a.severity === 'critical' ? 'red' : a.severity === 'warning' ? 'amber' : 'blue'}>
+                        {a.severity}
+                      </Badge>
+                    </td>
+                    <td><strong style={{ color: '#dceaf7' }}>{a.message}</strong></td>
+                    <td>
+                      <Badge tone={a.resolved ? 'slate' : 'green'}>
+                        {a.resolved ? 'Resolved' : 'Active'}
+                      </Badge>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  )
+}
+
+// ==============================================================================
+// 7. ABOUT PROJECT PAGE
 // ==============================================================================
 
 function AboutPage() {
@@ -940,10 +1776,11 @@ function AboutPage() {
           </p>
           <div className="about-chips">
             <span>Next.js 16</span>
-            <span>Flask 3.1</span>
+            <span>FastAPI 0.115</span>
             <span>psutil</span>
+            <span>Scapy</span>
             <span>TCP/UDP</span>
-            <span>REST API</span>
+            <span>SQLite</span>
           </div>
         </Card>
 
@@ -991,7 +1828,7 @@ function AboutPage() {
           <div>
             <div className="concept-icon"><Server /></div>
             <h3>RESTful Telemetry</h3>
-            <p>Decoupled communication where JSON endpoints allow Vercel frontends to consume real system metrics.</p>
+            <p>Decoupled communication where JSON endpoints allow Next.js frontends to consume real system metrics.</p>
           </div>
         </div>
       </Card>
@@ -1010,12 +1847,12 @@ function AboutPage() {
           </div>
           <div className="arch-box api">
             <Server />
-            <strong>Flask Backend</strong>
-            <span>Python 3.13 + Flask</span>
+            <strong>FastAPI Backend</strong>
+            <span>Python 3.12+ / Uvicorn</span>
           </div>
           <div className="arch-arrow">
             <ArrowUpRight />
-            <span>psutil / OS</span>
+            <span>psutil / Scapy</span>
           </div>
           <div className="arch-box system">
             <Cpu />
@@ -1026,9 +1863,13 @@ function AboutPage() {
         <div className="endpoint-list">
           <code>GET /api/health</code>
           <code>GET /api/network</code>
+          <code>GET /api/bandwidth</code>
           <code>GET /api/devices</code>
           <code>GET /api/services</code>
+          <code>GET /api/traffic</code>
+          <code>GET /api/analytics/overview</code>
           <code>GET /api/history</code>
+          <code>GET /api/settings</code>
         </div>
       </Card>
     </div>
@@ -1036,7 +1877,7 @@ function AboutPage() {
 }
 
 // ==============================================================================
-// MAIN APP COMPONENT WITH LIVE POLLING & ERROR HANDLING
+// MAIN APP COMPONENT WITH LIVE TELEMETRY POLLING & STATE HANDLING
 // ==============================================================================
 
 export default function TrafficLensApp() {
@@ -1046,9 +1887,20 @@ export default function TrafficLensApp() {
 
   // Real-time API states
   const [network, setNetwork] = useState<NetworkResponse | null>(null)
-  const [history, setHistory] = useState<HistoryRecord[]>([])
+  const [bandwidth, setBandwidth] = useState<BandwidthResponse | null>(null)
+  const [overview, setOverview] = useState<AnalyticsOverviewResponse | null>(null)
+  const [topDevices, setTopDevices] = useState<TopDeviceItem[]>([])
+  const [topServices, setTopServices] = useState<TopServiceItem[]>([])
   const [devices, setDevices] = useState<DeviceItem[]>([])
   const [services, setServices] = useState<ServiceItem[]>([])
+  const [history, setHistory] = useState<HistoryRecord[]>([])
+  const [trafficRecords, setTrafficRecords] = useState<TrafficRecordItem[]>([])
+  const [trafficSummary, setTrafficSummary] = useState<TrafficSummaryResponse | null>(null)
+  const [alerts, setAlerts] = useState<AlertItem[]>([])
+  const [settings, setSettings] = useState<SettingsResponse | null>(null)
+  const [timelinePoints, setTimelinePoints] = useState<TimelinePoint[]>([])
+  const [timelineRange, setTimelineRange] = useState<string>('1h')
+
   const [backendOnline, setBackendOnline] = useState<boolean>(false)
   const [loading, setLoading] = useState<boolean>(true)
   const [error, setError] = useState<string>('')
@@ -1056,12 +1908,12 @@ export default function TrafficLensApp() {
   // Polling references
   const isMounted = useRef(true)
 
-  // 1. Fetch Health
+  // 1. Health check
   const checkHealth = useCallback(async () => {
     try {
       const data = await api.getHealth()
       if (isMounted.current) {
-        setBackendOnline(data?.status === 'ok')
+        setBackendOnline(data?.status === 'online' || data?.status === 'ok')
       }
     } catch {
       if (isMounted.current) {
@@ -1070,12 +1922,15 @@ export default function TrafficLensApp() {
     }
   }, [])
 
-  // 2. Fetch Network Stats & History (every 3 seconds)
-  const fetchNetworkAndHistory = useCallback(async () => {
+  // 2. High-frequency telemetry polling (every 3 seconds)
+  const fetchFastMetrics = useCallback(async () => {
     try {
-      const [netData, histData] = await Promise.all([
+      const [netData, bwData, histData, ovData, alertsData] = await Promise.all([
         api.getNetwork().catch(() => null),
-        api.getHistory().catch(() => null)
+        api.getBandwidth().catch(() => null),
+        api.getHistory().catch(() => null),
+        api.getAnalyticsOverview().catch(() => null),
+        api.getAlerts(10).catch(() => null),
       ])
       if (!isMounted.current) return
 
@@ -1084,52 +1939,75 @@ export default function TrafficLensApp() {
         setBackendOnline(true)
         setError('')
       }
-      if (histData && Array.isArray(histData.history)) {
-        setHistory(histData.history)
-      }
-    } catch (e: any) {
+      if (bwData) setBandwidth(bwData)
+      if (ovData) setOverview(ovData)
+      if (histData && Array.isArray(histData.history)) setHistory(histData.history)
+      if (alertsData && Array.isArray(alertsData.alerts)) setAlerts(alertsData.alerts)
+    } catch {
       if (isMounted.current) {
         setBackendOnline(false)
-        setError('Unable to connect to TrafficLens backend. Please make sure the backend server is running.')
+        setError('Unable to connect to TrafficLens backend. Please ensure the backend server is running.')
       }
     } finally {
       if (isMounted.current) setLoading(false)
     }
   }, [])
 
-  // 3. Fetch Devices & Services (every 10 seconds)
-  const fetchDevicesAndServices = useCallback(async () => {
+  // 3. Lower-frequency telemetry polling (every 10 seconds)
+  const fetchSlowMetrics = useCallback(async () => {
     try {
-      const [devData, srvData] = await Promise.all([
+      const [devData, srvData, topDevData, topSrvData, trafData, trafSumData, settsData] = await Promise.all([
         api.getDevices().catch(() => null),
-        api.getServices().catch(() => null)
+        api.getServices().catch(() => null),
+        api.getTopDevices(10).catch(() => null),
+        api.getTopServices(10).catch(() => null),
+        api.getTraffic({ limit: 50 }).catch(() => null),
+        api.getTrafficSummary().catch(() => null),
+        api.getSettings().catch(() => null),
       ])
       if (!isMounted.current) return
 
-      if (devData && Array.isArray(devData.devices)) {
-        setDevices(devData.devices)
-      }
-      if (srvData && Array.isArray(srvData.services)) {
-        setServices(srvData.services)
-      }
+      if (devData && Array.isArray(devData.devices)) setDevices(devData.devices)
+      if (srvData && Array.isArray(srvData.services)) setServices(srvData.services)
+      if (Array.isArray(topDevData)) setTopDevices(topDevData)
+      if (Array.isArray(topSrvData)) setTopServices(topSrvData)
+      if (trafData && Array.isArray(trafData.records)) setTrafficRecords(trafData.records)
+      if (trafSumData) setTrafficSummary(trafSumData)
+      if (settsData) setSettings(settsData)
     } catch {
-      // Ignored; handled by health/network check
+      // Handled by fast metrics error
     }
   }, [])
 
-  // Initial load and periodic polling setup
+  // 4. Timeline data fetching when range changes
+  const fetchTimeline = useCallback(async (range: string) => {
+    try {
+      const data = await api.getAnalyticsTimeline(range)
+      if (isMounted.current && data && Array.isArray(data.points)) {
+        setTimelinePoints(data.points)
+      }
+    } catch {
+      // Fallback to rolling history
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchTimeline(timelineRange)
+  }, [timelineRange, fetchTimeline])
+
+  // Lifecycle & interval registration
   useEffect(() => {
     isMounted.current = true
 
-    // Initial fetch
+    // Initial triggers
     checkHealth()
-    fetchNetworkAndHistory()
-    fetchDevicesAndServices()
+    fetchFastMetrics()
+    fetchSlowMetrics()
 
-    // Polling intervals with proper cleanup
+    // Polling schedules
     const healthInterval = setInterval(checkHealth, 8000)
-    const fastInterval = setInterval(fetchNetworkAndHistory, 3000)
-    const slowInterval = setInterval(fetchDevicesAndServices, 10000)
+    const fastInterval = setInterval(fetchFastMetrics, 3000)
+    const slowInterval = setInterval(fetchSlowMetrics, 10000)
 
     return () => {
       isMounted.current = false
@@ -1137,12 +2015,18 @@ export default function TrafficLensApp() {
       clearInterval(fastInterval)
       clearInterval(slowInterval)
     }
-  }, [checkHealth, fetchNetworkAndHistory, fetchDevicesAndServices])
+  }, [checkHealth, fetchFastMetrics, fetchSlowMetrics])
 
   const handleManualRefresh = () => {
     checkHealth()
-    fetchNetworkAndHistory()
-    fetchDevicesAndServices()
+    fetchFastMetrics()
+    fetchSlowMetrics()
+    fetchTimeline(timelineRange)
+  }
+
+  const handleSaveSettings = async (updateData: Partial<SettingsResponse>) => {
+    const updated = await api.updateSettings(updateData)
+    setSettings(updated)
   }
 
   const pageTitle = navItems.find((item) => item.id === active)?.label || 'Overview'
@@ -1150,20 +2034,48 @@ export default function TrafficLensApp() {
   const renderedContent = useMemo(() => {
     switch (active) {
       case 'devices':
-        return <DevicesPage devices={devices} loading={loading} error={error} onRefresh={fetchDevicesAndServices} />
+        return <DevicesPage devices={devices} loading={loading} error={error} onRefresh={fetchSlowMetrics} />
       case 'services':
-        return <ServicesPage services={services} loading={loading} error={error} onRefresh={fetchDevicesAndServices} />
+        return <ServicesPage services={services} topServices={topServices} loading={loading} error={error} onRefresh={fetchSlowMetrics} />
+      case 'traffic':
+        return (
+          <TrafficPage
+            trafficRecords={trafficRecords}
+            trafficSummary={trafficSummary}
+            loading={loading}
+            error={error}
+            onRefresh={fetchSlowMetrics}
+          />
+        )
       case 'history':
-        return <HistoryPage history={history} loading={loading} error={error} onRefresh={fetchNetworkAndHistory} />
+        return <HistoryPage history={history} loading={loading} error={error} onRefresh={fetchFastMetrics} />
+      case 'settings':
+        return (
+          <SettingsPage
+            settings={settings}
+            alerts={alerts}
+            loading={loading}
+            onSave={handleSaveSettings}
+            onRefresh={fetchSlowMetrics}
+          />
+        )
       case 'about':
         return <AboutPage />
       default:
         return (
           <OverviewPage
             network={network}
-            history={history}
+            bandwidth={bandwidth}
+            overview={overview}
+            topDevices={topDevices}
+            topServices={topServices}
             devices={devices}
             services={services}
+            alerts={alerts}
+            history={history}
+            timelinePoints={timelinePoints}
+            timelineRange={timelineRange}
+            setTimelineRange={setTimelineRange}
             backendOnline={backendOnline}
             loading={loading}
             error={error}
@@ -1171,7 +2083,11 @@ export default function TrafficLensApp() {
           />
         )
     }
-  }, [active, network, history, devices, services, backendOnline, loading, error, fetchDevicesAndServices, fetchNetworkAndHistory])
+  }, [
+    active, network, bandwidth, overview, topDevices, topServices, devices,
+    services, alerts, history, timelinePoints, timelineRange, backendOnline,
+    loading, error, trafficRecords, trafficSummary, settings, fetchSlowMetrics, fetchFastMetrics
+  ])
 
   return (
     <div className="app-shell">
@@ -1180,6 +2096,7 @@ export default function TrafficLensApp() {
         setActive={(id) => { setActive(id); setMobileOpen(false) }}
         collapsed={collapsed}
         setCollapsed={setCollapsed}
+        mobileOpen={mobileOpen}
         backendOnline={backendOnline}
       />
 
@@ -1196,7 +2113,7 @@ export default function TrafficLensApp() {
             <ShieldCheck /> TrafficLens • Computer Networks PBL
           </span>
           <span>
-            {backendOnline ? 'Connected to live Flask backend' : 'Backend offline • Waiting for connection'}
+            {backendOnline ? 'Connected to live FastAPI backend' : 'Backend offline • Waiting for connection'}
           </span>
         </footer>
       </div>
